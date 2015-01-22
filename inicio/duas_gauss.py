@@ -8,11 +8,12 @@ __all__ = ['GaussGen']
 
 class GaussGen(object):
     """Classe para gerar dados"""
-    def __init__(self, means=[[0, 0], [8, 8]], stds=[[1, 1], [1, 1]], noise_ranges=[[-1, 1]], size=10000, n_neighbors=3):
+    def __init__(self, means=[[0, 0], [8, 8]], stds=[[1, 1], [1, 1]], covs=None, noise_ranges=[[-1, 1]], size=10000, n_neighbors=3):
         self.set_means(means)
         self.set_stds(stds)
         if not noise_ranges:
             noise_ranges = self.get_noise_range()
+        self.set_covs(covs)
         self.noise_ranges = noise_ranges
         self.size = size
         self.gen_gauss_data()
@@ -23,6 +24,12 @@ class GaussGen(object):
 
     def set_stds(self, stds):
         self.stds = np.array(stds)
+
+    def set_covs(self, covs):
+        if covs:
+            self.covs = np.array(covs)
+        else:
+            self.covs = None
 
     def get_noise_range(self):
         means = self.means
@@ -35,13 +42,16 @@ class GaussGen(object):
     def gen_gauss_data(self):
         means = self.means
         stds = self.stds
+        covs = self.covs
         size = self.size
         noise_ranges = self.noise_ranges
-        assert means.shape == stds.shape
+        if covs is None:
+            covs = np.array([np.diag(std) for std in stds])
+            assert means.shape == covs.shape[:-1]
         size_per_gauss = size / len(means)
         data = np.empty((0, len(means[0]) + len(noise_ranges) + 1))  # +1 pra classe
-        for classe, (m, s) in enumerate(zip(means, stds)):
-            _data = gen_data(m, s, zlims=noise_ranges, size=size_per_gauss)
+        for classe, (m, c) in enumerate(zip(means, covs)):
+            _data = gen_data(m, cov=c, zlims=noise_ranges, size=size_per_gauss)
             classes = np.zeros(_data.shape[0]).reshape(_data.shape[0], 1) + classe
             _data = np.append(_data, classes, axis=1)
             data = np.append(data, _data, axis=0)
