@@ -141,7 +141,6 @@ class GaussGen(object):
                 # juntando as duas distâncias
                 dist = dist_backbones + list(dist_other_points)
                 dists.append(dist)
-            print
             self.dists = np.array(dists)
         return self.dists
 
