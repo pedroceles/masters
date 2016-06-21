@@ -8,8 +8,9 @@ from ml_metrics.elementwise import rmse
 class DataSingleStudy(object):
     '''Class que abstrai o data loader em vem com funções para
     estudos da base de dados'''
+    LOADER_CLASS = DataLoader
 
-    def __init__(self, fname, sep=',', hidden_partition=None, cv=2, error=rmse):
+    def __init__(self, fname, sep=',', hidden_partition=None, cv=2, error=rmse, classification=False, test_split=None):
         '''
         hidden_partition: percentual de dados que serão escondidos
         cv: quantidade de folds para calculo do erro
@@ -20,10 +21,14 @@ class DataSingleStudy(object):
         self.error = error
         self.fname = fname
         self.sep = sep
+        self.test_split = test_split
         self.get_loader()
+        self.seed = None
+        self.estimators = None
+        self.classification = classification
 
     def get_loader(self, norm=True):
-        self.loader = DataLoader(self.fname, norm=norm, sep=self.sep)
+        self.loader = self.LOADER_CLASS(self.fname, norm=norm, sep=self.sep, test_split=self.test_split)
 
     @property
     def n_attr(self):
@@ -56,19 +61,24 @@ class DataSingleStudy(object):
         ret = self.get_attr_error(cols1 + cols2)
         return ret
 
-    def calc_score(self, estimator, df, use_attrs=None):
+    def calc_score(self, estimator, df, use_attrs=None, use_seed=False):
         '''Calcular o erro de um estimador, dado um data_frame. considera-se que
         todas as colunas do df são usadas na previsão da última.'''
-        from sklearn.metrics import make_scorer
-        from sklearn.cross_validation import cross_val_score
-        scorer = make_scorer(self.error, greater_is_better=False)
+        # from sklearn.metrics import make_scorer
+        from sklearn.cross_validation import cross_val_score, KFold
+        if use_seed:
+            np.random.seed(self.seed)
+        # scorer = make_scorer(self.error, greater_is_better=False) if not self.classification else 'accuracy'
+        scorer = 'mean_absolute_error' if not self.classification else 'accuracy'
         target = df.values[:, -1]
         if not use_attrs:
             vals = df.values[:, :-1]
         else:
             vals = df.values[:, use_attrs]
 
-        return cross_val_score(estimator, vals, target, scorer, cv=self.cv, n_jobs=1)
+        kf = KFold(vals.shape[0], self.cv, shuffle=True)
+
+        return cross_val_score(estimator, vals, target, scorer, cv=kf, n_jobs=1)
 
     def compare_estimators(self, estimators, backbones=[3, 4, 5, 6, 7]):
         ''' Dado os backbones, compara diversos estimadores
@@ -92,19 +102,48 @@ class DataSingleStudy(object):
         return result
 
     @staticmethod
-    def get_estimators():
+    def get_estimators_regression():
         from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, GradientBoostingRegressor
-        from sklearn.svm import SVR
+        # from sklearn.svm import SVR
         from sklearn.linear_model import SGDRegressor
         from sklearn.tree import DecisionTreeRegressor, ExtraTreeRegressor
-        ests = [RandomForestRegressor, ExtraTreeRegressor, AdaBoostRegressor, GradientBoostingRegressor, SVR, SGDRegressor, DecisionTreeRegressor]
+        ests = [
+            RandomForestRegressor,
+            ExtraTreeRegressor,
+            AdaBoostRegressor,
+            GradientBoostingRegressor,
+            # SVR,
+            SGDRegressor,
+            DecisionTreeRegressor
+        ]
         return [e() for e in ests]
+
+    @staticmethod
+    def get_estimators_classification():
+        from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, GradientBoostingClassifier
+        # from sklearn.svm import SVR
+        from sklearn.linear_model import SGDClassifier
+        from sklearn.tree import DecisionTreeClassifier, ExtraTreeClassifier
+        ests = [
+            RandomForestClassifier,
+            ExtraTreeClassifier,
+            AdaBoostClassifier,
+            GradientBoostingClassifier,
+            # SVR,
+            SGDClassifier,
+            DecisionTreeClassifier
+        ]
+        return [e() for e in ests]
+
+    def get_estimators(self):
+        estimators = self.get_estimators_regression() if not self.classification else self.get_estimators_classification()
+        return estimators
 
     def make_comparison(self, backbones=[3, 4, 5, 6, 7]):
         '''classe que pega os estimadores de get_estimators e retorna os valores
         em de compare_estimators de forma matricial'''
-        np.random.seed()
-        ests = self.get_estimators()
+        np.random.seed(self.seed)
+        ests = self.estimators or self.get_estimators()
         errors = self.compare_estimators(ests, backbones)
         error_arrays = np.array([errors[est] for est in ests]).T
         return error_arrays
@@ -135,6 +174,8 @@ class DataMultiStudy(object):
         self.error = error
         self.fname = fname
         self.sep = sep
+        self.seed = None
+        self.estimators = None
 
     def get_ds(self):
         '''retorna uma instancia de DataSingleStudy'''
@@ -145,6 +186,7 @@ class DataMultiStudy(object):
             cv=self.cv,
             error=self.error
         )
+        self.last_ds.seed = self.seed
         return self.last_ds
 
     @property
@@ -234,9 +276,9 @@ class DataMultiStudy(object):
 
         def run():
             DS = self.get_ds()
+            DS.estimators = self.estimators
             error_arrays = DS.make_comparison(backbones)
             errors.append(error_arrays)
-        self._run = run
         for i in range(times):
             pool.add_process(run)
         pool.start()
@@ -258,15 +300,99 @@ class DataMultiStudy(object):
 
         return max_deltas
 
-    def select_most_important(self, times=4):
+    def select_most_important(self, pre_selected=[], eliminate=[], times=4):
         from itertools import combinations
-        combs = combinations(range(self.ds_n_attr), self.ds_n_attr - 1)
+        base_range_set = set(range(self.ds_n_attr))
+        base_range_set.difference_update(eliminate)
+        base_range = base_range_set.difference(set(pre_selected))
+        base_range = list(base_range)
+        combs = combinations(base_range, len(base_range) - 1)
+        combs = [pre_selected + list(c) for c in combs]
         result = self.make_multi_backbones_comparison(combs, times=times)  # TODO Pedro Celes - [13-05-2015]: ver times
         max_deltas = {}
         for k, v in result.items():
-            new_key = set(range(self.ds_n_attr)).difference(k)
+            new_key = base_range_set.difference(k)
             max_deltas[new_key.pop()] = v
         return sorted(max_deltas.items(), key=lambda x: -x[1])
+
+    def sselect_features(self, estimator, min_attrs=1, times=4):
+        # elim = []
+        use = []
+        eliminate = []
+        ds = self.get_ds()
+        score = -np.inf
+        attrs = range(self.ds_n_attr)
+        self.estimators = [estimator]
+        while attrs:
+            # if len(use) == self.ds_n_attr:
+            #     break
+            importants = self.select_most_important(pre_selected=use + eliminate, times=times)
+            add_canditate = importants[0][0]
+            use.append(add_canditate)
+            new_score = ds.calc_score(estimator, ds.loader.data, use_attrs=use).mean()
+            if new_score < score:
+                eliminate.append(use.pop())
+            else:
+                score = new_score
+            idx = attrs.index(add_canditate)
+            attrs.pop(idx)
+        return use
+
+    def select_features(self, estimator, min_attrs=1, times=4):
+        # elim = []
+        use = []
+        eliminate = []
+        ds = self.get_ds()
+        score = -np.inf
+        attrs = range(self.ds_n_attr)
+        while attrs:
+            # if len(use) == self.ds_n_attr:
+            #     break
+            importants = self.select_most_important(pre_selected=use, times=times, eliminate=eliminate)
+            add_canditate = importants[0][0]
+            use.append(add_canditate)
+            new_score = ds.calc_score(estimator, ds.loader.data, use_attrs=use).mean()
+            if new_score < score:
+                eliminate.append(use.pop())
+            else:
+                score = new_score
+            idx = attrs.index(add_canditate)
+            attrs.pop(idx)
+        return use
+
+    def select_feature_forward(self, estimator):
+        ds = self.get_ds()
+        score = -np.inf
+        attrs = range(self.ds_n_attr)
+        selected_attrs = []
+        while attrs:
+            selected_index = None
+            for i, attr in enumerate(attrs):
+                print attr
+                np.random.seed(self.seed)
+                new_score = ds.calc_score(estimator, ds.loader.data, use_attrs=selected_attrs + [attr], use_seed=True).mean()
+                if new_score > score:
+                    score = new_score
+                    selected_index = i
+            if selected_index is not None:
+                selected_attrs.append(attrs.pop(selected_index))
+            else:
+                break
+        return selected_attrs
+
+    def select_feature_backward(self, estimator):
+        from itertools import combinations
+        ds = self.get_ds()
+        selected_attrs = range(self.ds_n_attr)
+        score = ds.calc_score(estimator, ds.loader.data, selected_attrs, use_seed=True).mean()
+        while True:
+            combs = combinations(selected_attrs, len(selected_attrs) - 1)
+            results_to_analyze = map(lambda comb: (comb, ds.calc_score(estimator, ds.loader.data, comb, use_seed=True).mean()), combs)
+            max_result = max(results_to_analyze, key=lambda results: results[1])
+            if max_result[1] > score:
+                selected_attrs, score = max_result
+            else:
+                return selected_attrs
 
     def plot_most_important(self, save=False, times=4, **kwargs):
         import matplotlib.pyplot as plt
