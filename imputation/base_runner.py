@@ -231,13 +231,12 @@ class MissingComparisonRegressionRunner(BaseRunner):
         error_values = self.get_est_error_values(est, gen_values, filled_values, missing_values)
         return Values(filled_values, error_values)
 
-    def get_all_values(self):
+    def get_all_values(self, gen_values):
         np.random.seed()
         seed_value = self.seed
         if not self.seed:
             self.update_seed()
         print self.seed, '######'
-        gen_values = self.get_gen_values()
         missing_values = self.get_missing_values(gen_values.X_train)
 
         self.est = self.estimator()
@@ -250,9 +249,10 @@ class MissingComparisonRegressionRunner(BaseRunner):
     def get_multiple_est_error_values(self, times=100):
         biased_errors = []
         random_errors = []
+        gen_values = self.get_gen_values()
         for i in xrange(times):
             print i, self.seed
-            all_vals = self.get_all_values()
+            all_vals = self.get_all_values(gen_values)
             biased_errors.append(all_vals.biased.error_values)
             random_errors.append(all_vals.random.error_values)
         return MultipleErrorValues(np.array(biased_errors), np.array(random_errors))
@@ -264,7 +264,13 @@ class MissingComparisonRegressionRunner(BaseRunner):
         result_q = m.Queue()
         pool = mp.Pool()
         method_name = 'get_all_values'
-        pool.map_async(single_runner, zip([self] * times, [method_name] * times, [result_q] * (times)))
+        gen_values = self.get_gen_values()
+        pool.map_async(
+            single_runner, zip(
+                [self] * times, [method_name] * times, [result_q] * (times),
+                [gen_values] * times
+            )
+        )
         pool.close()
         results = []
         for i in range(times):
@@ -288,7 +294,8 @@ class MissingComparisonRegressionRunner(BaseRunner):
             plt.show()
 
     def plot(self):
-        all_vals = self.get_all_values()
+        gen_values = self.get_gen_values()
+        all_vals = self.get_all_values(gen_values)
 
         fig, axes_rows = plt.subplots(2, len(self.attrs_missing) + 1)
         values_group = [all_vals.biased, all_vals.random]
@@ -779,7 +786,8 @@ class MissingComparisonMulipleAttrsStudy(MissingComparisonMulipleStudy):
             runner = self.prepare_runner(item)
             runner.seed = 8798
             np.random.seed(runner.seed)
-            av = runner.get_all_values()
+            gen_values = runner.get_gen_values()
+            av = runner.get_all_values(gen_values)
             data.append(av)
         self.plot([x.random.error_values for x in data])
 
