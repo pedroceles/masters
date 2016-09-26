@@ -22,7 +22,7 @@ class Importer(object):
                 continue
             module = imp.load_module('runners{}'.format(i), *f_result)
             modules.append(module)
-            # sys.path.pop()
+            sys.path.pop()
         return modules
 
     def import_all_classes(self):

@@ -17,7 +17,7 @@ REGRESSION_ESTIMATORS = [ensemble.RandomForestRegressor, ensemble.ExtraTreesRegr
 GeneralValues = namedtuple('GeneralValues', ['X', 'y', 'X_train', 'X_test', 'y_train', 'y_test', 'backbones'])
 MissingValues = namedtuple('MissingValues', ['biased', 'random'])
 FilledValues = namedtuple('FilledValues', ['neigh', 'naive'])
-ErrorValues = namedtuple('ErrorValues', ['complete', 'neigh', 'naive', 'no_missing'])
+ErrorValues = namedtuple('ErrorValues', ['complete', 'neigh', 'naive', 'no_missing', 'no_attrs'])
 Values = namedtuple('Values', ['filled_values', 'error_values'])
 AllValues = namedtuple('AllValues', ['gen_values', 'biased', 'random'])
 MultipleErrorValues = namedtuple('MultipleErrorValues', ['biased', 'random'])
@@ -36,7 +36,7 @@ def mape(y_true, y_pred):
 
 class BaseRunner(object):
     def __init__(self, source_data_file=None, values=None):
-        self._values = values or self.load_values(source_data_file)
+        self._values = values if values is not None else self.load_values(source_data_file)
 
     def load_values(self, source_data_file):
         import pandas as pd
@@ -89,6 +89,10 @@ class MissingComparisonRegressionRunner(BaseRunner):
         ps = [p_factory_gaussian(peaks, scales, max_prob) for peaks, scales in zip(peaks_list, scales_list)]
         return ps
 
+    def init_estimator(self, **kwargs):
+        _kwargs = kwargs or getattr(self, 'est_kwargs', {}) or {}
+        return self.estimator(**_kwargs)
+
     def miss_data(self):
         self.bm.hide_data(self.percent_missing)
         amount_nan = np.isnan(self.bm.hided_data).sum(axis=0)
@@ -130,14 +134,14 @@ class MissingComparisonRegressionRunner(BaseRunner):
         assert gb_count_missing['x_missing_biased', 'sum'].sum() == \
             gb_count_missing['x_missing_random', 'sum'].sum()
 
-        est = self.estimator()
+        est = self.init_estimator()
         df = pd.DataFrame()
         df['x'] = gen_values.X_train[:, attr]
         df['x_group'] = pd.cut(df['x'], bins)
         df['y'] = gen_values.y_train
 
         self.update_seed()
-        est = self.estimator()
+        est = self.init_estimator()
         np.random.seed(self.seed)
         est.fit(filled_values_biased.neigh, gen_values.y_train)
         df['y_pred_biased'] = est.predict(gen_values.X_train)
@@ -224,7 +228,11 @@ class MissingComparisonRegressionRunner(BaseRunner):
         X_no_missing = X_train[indexes_no_missing]
         y_no_missing = y_train[indexes_no_missing]
         error_no_missing = self.run_estimator(est, X_no_missing, y_no_missing, X_test, y_test)
-        return ErrorValues(error_complete, error_neigh, error_naive, error_no_missing)
+
+        X_train_no_attrs = np.delete(X_train, self.attrs_missing, 1)
+        X_test_no_attrs = np.delete(X_test, self.attrs_missing, 1)
+        error_no_attrs = self.run_estimator(est, X_train_no_attrs, y_train, X_test_no_attrs, y_test)
+        return ErrorValues(error_complete, error_neigh, error_naive, error_no_missing, error_no_attrs)
 
     def get_values(self, est, gen_values, missing_values):
         filled_values = self.get_filled_values(missing_values, gen_values.backbones)
@@ -239,7 +247,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         print self.seed, '######'
         missing_values = self.get_missing_values(gen_values.X_train)
 
-        self.est = self.estimator()
+        self.est = self.init_estimator()
         biased = self.get_values(self.est, gen_values, missing_values.biased)
         random = self.get_values(self.est, gen_values, missing_values.random)
 
@@ -276,6 +284,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         for i in range(times):
             print 'Getting', i
             results.append(result_q.get())
+            print 'Got', i
         biased_errors = [r.biased.error_values for r in results]
         random_errors = [r.random.error_values for r in results]
         return MultipleErrorValues(np.array(biased_errors), np.array(random_errors))
@@ -285,7 +294,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         if show:
             fig, axes = plt.subplots(1, 2, sharey=True)
         for data, ax, title in zip(
-            multiple_errors, axes, [u"Viés", u"Randômico"]
+            multiple_errors, axes, [u"Bias", u"Random"]
         ):
             mean, std = data.mean(0), data.std(0)
             self.plot_est_errors(ax, mean, std, title=title)
@@ -318,7 +327,10 @@ class MissingComparisonRegressionRunner(BaseRunner):
 
     def plot_missing_hist_example(self, attr):
         assert attr in self.attrs_missing
-        fig, ax = plt.subplots(1, 1)
+        from matplotlib.ticker import FormatStrFormatter
+
+        fig, axes = plt.subplots(1, 2)
+        ax_hist, ax_prob = axes
         gen_values = self.get_gen_values()
         missing_values = self.get_missing_values(gen_values.X_train)
         range_ = gen_values.X_train[:, attr].min(), gen_values.X_train[:, attr].max()
@@ -326,16 +338,31 @@ class MissingComparisonRegressionRunner(BaseRunner):
         hist_biased, edges = np.histogram(missing_values.biased[:, attr], range=range_)
         hist_random, edges = np.histogram(missing_values.random[:, attr], range=range_)
 
+        min_value, max_value = edges.min(), edges.max()
+
         edges = edges[:-1]
         width = abs(edges[0] - edges[1]) / 2.0
-        ax.bar(edges - width, hist_complete, width * 2, label="Original", color='b')
-        ax.bar(edges - width, hist_biased, width, label=u"Viés", color='r')
-        ax.bar(edges, hist_random, width, label=u"Aleatório", color='g')
-        ax.legend()
-        ax.set_xlim(edges[0] - width, edges[-1] + width)
-        ax.set_xticks(edges)
-        ax.set_xticklabels([])
-        ax.set_yticklabels([])
+        ax_hist.bar(edges - width, hist_complete, width * 2, label="Original", color='#222222')
+        ax_hist.bar(edges - width, hist_biased, width, label=u"Biased", color='grey')
+        ax_hist.bar(edges, hist_random, width, label=u"Random", color='white')
+        ax_hist.legend()
+        ax_hist.set_xlim(edges[0] - width, edges[-1] + width)
+        ax_hist.set_xticks(edges)
+        ax_hist.set_xlabel('Attribute value')
+        ax_hist.set_ylabel('Number of occurrences')
+        ax_hist.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax_hist.set_title('Attribute Value Distribution')
+
+        attr_index = self.attrs_missing.index(attr)
+        prob_f = self.get_p_functions()[attr_index]
+        x_values = np.linspace(min_value, max_value, 1000)
+        ax_prob.plot(x_values, prob_f(x_values), color='black')
+        ax_prob.set_xticks(edges)
+        ax_prob.set_xlabel('Attribute value')
+        ax_prob.set_ylabel('Probability to be missing')
+        ax_prob.xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax_prob.set_title('Attribute Value Missing Probability')
+
         plt.show()
 
     def plot_important(self):
@@ -346,7 +373,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         for exclude_attr in attrs:
             use_attrs = attrs[:exclude_attr] + attrs[exclude_attr + 1:]
             getter = [slice(None), use_attrs]
-            est = self.estimator()
+            est = self.init_estimator()
             np.random.seed(self.seed)
             error = self.run_estimator(
                 est, gen_values.X_train[getter], gen_values.y_train,
@@ -369,6 +396,8 @@ class MissingComparisonRegressionRunner(BaseRunner):
         ax.bar(x - 0.4, scores, color='gray', width=width)
         ax.set_xticks(x)
         ax.set_xticklabels(i)
+        ax.set_xlabel("Attribute")
+        ax.set_ylabel("MAPE" if not self.classification else "Ac")
         plt.show()
 
     def fill_data(self, missing_values, backbones):
@@ -401,21 +430,22 @@ class MissingComparisonRegressionRunner(BaseRunner):
 
     def plot_est_errors(self, ax_bar, error_values, yerr_values=None, title=""):
         import textwrap
-        original_color = 'blue'
-        neigh_color = 'green'
-        naive_color = 'red'
-        no_missing_color = 'yellow'
-        colors = [original_color, neigh_color, naive_color, no_missing_color]
+        original_color = 'Black'
+        neigh_color = '#444444'
+        naive_color = '#888888'
+        no_missing_color = '#bbbbbb'
+        no_attrs_color = '#ffffff'
+        colors = [original_color, neigh_color, naive_color, no_missing_color, no_attrs_color]
 
-        range_error = np.arange(4) + 1
+        range_error = np.arange(5) + 1
         width = 0.75
         ax_bar.bar(
             range_error - width / 2., error_values, width, color=colors,
             yerr=yerr_values, ecolor='black'
         )
-        ax_bar.set_xticks([1, 2, 3, 4])
+        ax_bar.set_xticks([1, 2, 3, 4, 5])
         xticklabels_text = [
-            "Original", "Imputado Vizinhos", u"Imputado Naïve", "Retirado"
+            "Original", "Neighbors", u"Naïve", "Removed", "No Attrs"
         ]
         xticklabels = [textwrap.fill(text, 10) for text in xticklabels_text]
         ylim_max = 0
@@ -424,7 +454,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
             if yerr_values is not None:
                 y += yerr_values[i]
             ylim_max = max(ylim_max, y)
-            ax_bar.text(i + 1, y, "{:.2f}".format(y))
+            ax_bar.text(i + 1, y, "{:.2f}".format(error))
 
         ax_bar.set_ylim(top=ylim_max * 1.1)
         ax_bar.set_xticklabels(xticklabels)
@@ -484,7 +514,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         for exclude_attr in attrs:
             use_attrs = attrs[:exclude_attr] + attrs[exclude_attr + 1:]
             getter = [slice(None), use_attrs]
-            est = self.estimator()
+            est = self.init_estimator()
             np.random.seed(self.seed)
             error = self.run_estimator(
                 est, gen_values.X_train[getter], gen_values.y_train,
