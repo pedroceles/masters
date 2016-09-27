@@ -35,7 +35,7 @@ class PercentDFTransformer(BaseDFTransformer):
         return np.array([mean, p25, p75])
 
     def get_df(self):
-        gen_info_cols = ['db', 'estimator', 'percent']
+        gen_info_cols = ['db', 'estimator', 'p_attr', 'p_row']
         data_cols = [
             ['biased', 'random'],
             ['neigh', 'naive', 'no_rows', 'no_cols'],
@@ -45,16 +45,16 @@ class PercentDFTransformer(BaseDFTransformer):
         df_data = pd.DataFrame(columns=data_col_mi)
         df_info = pd.DataFrame(columns=gen_info_cols)
         dict_ = self.get_pickle()
-        for index, ((estimator, percent), data) in enumerate(dict_.items()):
+        for index, ((estimator, p_attr, p_row), data) in enumerate(dict_.items()):
             biased = self.treat_data(data['biased']).T
             random = self.treat_data(data['random']).T
             row_array = np.array([biased, random]).flatten()
 
-            df_info.loc[index] = [self.db_name, estimator, percent]
+            df_info.loc[index] = [self.db_name, estimator, p_attr, p_row]
             df_data.loc[index] = row_array
 
         df = pd.concat([df_info, df_data], axis=1)
-        df.set_index(['db', 'estimator', 'percent'], inplace=True)
+        df.set_index(['db', 'estimator', 'p_attr', 'p_row'], inplace=True)
         multi_index = pd.MultiIndex.from_tuples(df.columns)
         df.columns = multi_index
         df.sort_index(axis=1, inplace=True)

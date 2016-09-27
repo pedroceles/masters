@@ -152,6 +152,40 @@ class PercentColMixing(object):
             pickle.dump(data, open(save_file, 'w'))
 
 
+class PercentAllMixing(object):
+    def run_once(self, klass, times=100):
+        import math
+        import os
+        import pickle
+        percents_attrs = [0.05, 0.1, 0.25, 0.5, 0.75]
+        percent_rows = [0.05, 0.1, 0.2, 0.5]
+        data = {}
+        dummy = klass([])
+        train_test_data = dummy.get_train_test_data()
+        for estimator in self.estimators:
+            for p_attr in percents_attrs:
+                for p_row in percent_rows:
+                    print p_row, p_attr, klass, estimator
+                    klass.percent_missing = p_row
+                    klass.estimator = estimator
+                    attrs = klass.get_important_from_file()
+                    n_attrs = len(attrs)
+                    n_attrs_to_use = math.ceil(n_attrs * p_attr)
+                    if n_attrs_to_use == n_attrs:
+                        n_attrs_to_use -= 1
+                    instance = klass(attrs[0:n_attrs_to_use])
+                    instance.set_train_test_data(train_test_data)
+                    biased, random = instance.mp_get_multiple_est_error_values(
+                        times=times)
+                    data[(estimator.__name__, p_attr, p_row)] = {
+                        'biased': biased,
+                        'random': random,
+                    }
+                    save_dir = self.get_data_dir(klass)
+                    save_file = os.path.join(save_dir, 'percent.pickle')
+                    pickle.dump(data, open(save_file, 'w'))
+
+
 class DBInfoMixin(object):
     def run_once(self, klass):
         result = []
@@ -217,6 +251,18 @@ class PercentColRegressionImporter(
 
 class PercentColClassificationImporter(
     ClassificationMixin, PercentColMixing, RunnerImporter
+):
+    pass
+
+
+class PercentAllRegressionImporter(
+    RegressionMixin, PercentAllMixing, RunnerImporter
+):
+    pass
+
+
+class PercentAllClassificationImporter(
+    ClassificationMixin, PercentAllMixing, RunnerImporter
 ):
     pass
 
