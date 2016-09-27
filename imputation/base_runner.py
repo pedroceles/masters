@@ -23,6 +23,13 @@ AllValues = namedtuple('AllValues', ['gen_values', 'biased', 'random'])
 MultipleErrorValues = namedtuple('MultipleErrorValues', ['biased', 'random'])
 
 
+def print_stdout(*strings):
+    import sys
+    string = u'\t'.join(strings)
+    sys.stdout.write(string)
+    sys.stdout.flush()
+
+
 def save_data(data, f_path):
     import pickle
     pickle.dump(data, open(f_path, 'wb'))
@@ -255,7 +262,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         seed_value = self.seed
         if not self.seed:
             self.update_seed()
-        print self.seed, '######'
+        print_stdout(self.seed, '######')
         missing_values = self.get_missing_values(gen_values.X_train)
 
         self.est = self.init_estimator()
@@ -293,9 +300,9 @@ class MissingComparisonRegressionRunner(BaseRunner):
         pool.close()
         results = []
         for i in range(times):
-            print 'Getting', i
+            print_stdout('Getting', i)
             results.append(result_q.get())
-            print 'Got', i
+            print_stdout('Got', i)
         biased_errors = [r.biased.error_values for r in results]
         random_errors = [r.random.error_values for r in results]
         return MultipleErrorValues(np.array(biased_errors), np.array(random_errors))
