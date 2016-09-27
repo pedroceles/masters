@@ -182,7 +182,7 @@ class PercentAllMixing(object):
                         'random': random,
                     }
                     save_dir = self.get_data_dir(klass)
-                    save_file = os.path.join(save_dir, 'percent.pickle')
+                    save_file = os.path.join(save_dir, 'percent_all.pickle')
                     pickle.dump(data, open(save_file, 'w'))
 
 
