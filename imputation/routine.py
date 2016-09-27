@@ -342,19 +342,18 @@ def neigh_corr(times=10):
 
 
 def get_winners_table():
-    from glob import glob
+    import pickle
     from imputation import df_transformer
 
     types = ["classification", "regression"]
     result = []
     profiles = {}
     for t in types:
-        fs = glob(
-            '/Users/pedroceles/dev/mestrado/dbs/{}/*/data/percent.pickle'.format(
-                t
-            ))
+        data = pickle.load(open(
+            "/Users/pedroceles/dev/mestrado/study_data/percent_{}.pickle".format(t)
+        ))
         df = df_transformer.DFAggregator(
-            df_transformer.PercentDFTransformer, fs).get_df()
+            df_transformer.PercentDFTransformer, data=data).get_df()
 
         arg_fun = np.argmin if t == "regression" else np.argmax
         for kind_missing in ['random', 'biased']:
@@ -365,10 +364,11 @@ def get_winners_table():
                 sum(max_min == 0),
                 sum(max_min == 1),
                 sum(max_min == 2),
+                sum(max_min == 3),
             ])
 
-            treatments = ['neigh', u'naïve', 'removed']
-            for i in range(3):
+            treatments = ['neigh', u'naïve', 'no_rows', 'no_cols']
+            for i in range(4):
                 idx = max_min == i
                 index = filtered[idx].index
                 count = index.get_level_values(2).value_counts().sort_index()
@@ -379,7 +379,7 @@ def get_winners_table():
 def plot_winners_percent_profile(dict, db_type):
 
     def group():
-        treatments = ['neigh', u'naïve', 'removed']
+        treatments = ['neigh', u'naïve', 'no_rows', 'no_cols']
         grouped = {}
         for t in treatments:
             kvs = [
@@ -401,27 +401,34 @@ def plot_winners_percent_profile(dict, db_type):
 
     width = 0.02
 
-    removed_values = group_dict['removed']
+    removed_values_rows = group_dict['no_rows']
     plt.bar(
-        removed_values.index + (-width / 2.0),
-        removed_values.values, label='removed', color='black', width=width)
+        removed_values_rows.index + (-width / 2.0),
+        removed_values_rows.values, label='No Rows', color='black', width=width)
+
+    removed_values_cols = group_dict['no_cols']
+    plt.bar(
+        removed_values_cols.index + (-width / 2.0),
+        removed_values_cols.values, label='No Cols', color='#666666', width=width,
+        bottom=removed_values_rows.values
+    )
 
     neigh_values = group_dict['neigh']
     plt.bar(
         neigh_values.index + (width / 2.0),
-        neigh_values.values, label='neigh', color='gray', width=width)
+        neigh_values.values, label='Neighbors', color='#aaaaaa', width=width)
 
     naive_values = group_dict[u'naïve']
     plt.bar(
         naive_values.index + (width / 2.0),
-        naive_values.values, label=u'naïve', color='#cccccc', width=width,
+        naive_values.values, label=u'Naïve', color='white', width=width,
         bottom=neigh_values.values
     )
 
     ax = plt.axes()
-    ax.set_xticklabels(removed_values.index)
-    ax.set_xticks(removed_values.index)
-    ax.set_xlabel('Percent')
+    ax.set_xticklabels(removed_values_rows.index)
+    ax.set_xticks(removed_values_rows.index)
+    ax.set_xlabel('%A')
     ax.set_ylabel('Amount')
     ax.set_title(db_type)
 

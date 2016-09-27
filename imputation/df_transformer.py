@@ -28,7 +28,7 @@ class PercentDFTransformer(BaseDFTransformer):
     def treat_data(self, array):
         base = array[:, 1:].T
         if self.div:
-            base = np.array([array[:, i] / array[:, 0] for i in range(1, 4)])
+            base = np.array([array[:, i] / array[:, 0] for i in range(1, 5)])
         mean = np.mean(base, 1)
         p25 = np.percentile(base, 25, 1)
         p75 = np.percentile(base, 75, 1)
@@ -38,7 +38,7 @@ class PercentDFTransformer(BaseDFTransformer):
         gen_info_cols = ['db', 'estimator', 'percent']
         data_cols = [
             ['biased', 'random'],
-            ['neigh', 'naive', 'removed'],
+            ['neigh', 'naive', 'no_rows', 'no_cols'],
             ['mean', 'p25', 'p75']
         ]
         data_col_mi = pd.MultiIndex.from_product(data_cols)
@@ -121,3 +121,12 @@ class PickleAggregator(object):
             db = f.split('/')[-3]
             aggregate[db] = data
         self.aggregate = aggregate
+
+
+def get_agg_pickle_df(fpath, **kwargs):
+    kwargs.setdefault('df_transformer_klass', PercentDFTransformer)
+    import pickle
+    data = pickle.load(open(fpath))
+    kwargs['data'] = data
+    df = DFAggregator(**kwargs).get_df()
+    return df

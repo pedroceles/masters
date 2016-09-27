@@ -69,6 +69,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         self.categorical_attrs = categorical_attrs or []
         self.attrs_missing = attrs_missing
         self.metric_name = "Accu." if self.classification else "MAPE"
+        self.train_test_data = None
 
     def update_seed(self):
         self.seed = int(np.random.random() * 1000000)
@@ -184,12 +185,22 @@ class MissingComparisonRegressionRunner(BaseRunner):
         df = df.groupby(df.index).mean()
         return df, df_error
 
-    def get_gen_values(self):
+    def set_train_test_data(self, data):
+        self.train_test_data = data
+
+    def get_train_test_data(self):
         from sklearn.cross_validation import train_test_split
+
+        if self.train_test_data:
+            return self.train_test_data
 
         values = np.copy(self.values)
         X, y = values[:, :-1], values[:, -1]
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4)
+        return (X, y, X_train, X_test, y_train, y_test)
+
+    def get_gen_values(self):
+        X, y, X_train, X_test, y_train, y_test = self.get_train_test_data()
 
         backbones = set(range(X_train.shape[1]))
         backbones = list(backbones.difference(self.attrs_missing))
@@ -445,7 +456,7 @@ class MissingComparisonRegressionRunner(BaseRunner):
         )
         ax_bar.set_xticks([1, 2, 3, 4, 5])
         xticklabels_text = [
-            "Original", "Neighbors", u"Naïve", "Removed", "No Attrs"
+            "Original", "Neighbors", u"Naïve", "No Rows", "No Cols"
         ]
         xticklabels = [textwrap.fill(text, 10) for text in xticklabels_text]
         ylim_max = 0

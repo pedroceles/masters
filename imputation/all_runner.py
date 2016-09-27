@@ -100,6 +100,8 @@ class PercentAttrMixing(object):
         import pickle
         percents = [0.05, 0.1, 0.25, 0.5, 0.75]
         data = {}
+        dummy = klass([])
+        train_test_data = dummy.get_train_test_data()
         for estimator in self.estimators:
             for percent in percents:
                 print percent, klass, estimator
@@ -111,6 +113,7 @@ class PercentAttrMixing(object):
                 if n_attrs_to_use == n_attrs:
                     n_attrs_to_use -= 1
                 instance = klass(attrs[0:n_attrs_to_use])
+                instance.set_train_test_data(train_test_data)
                 biased, random = instance.mp_get_multiple_est_error_values(
                     times=times)
                 data[(estimator.__name__, percent)] = {
@@ -128,6 +131,8 @@ class PercentColMixing(object):
         import pickle
         percents = [0.05, 0.1, 0.20, 0.25, 0.30, 0.4, 0.5]
         data = {}
+        dummy = klass([])
+        train_test_data = dummy.get_train_test_data()
         estimator = self.estimators[0]
         for percent in percents:
             print percent, klass
@@ -135,6 +140,7 @@ class PercentColMixing(object):
             klass.percent_missing = percent
             attrs = klass.get_important_from_file()[:1]
             instance = klass(attrs)
+            instance.set_train_test_data(train_test_data)
             biased, random = instance.mp_get_multiple_est_error_values(
                 times=times)
             data[(estimator.__name__, percent)] = {
@@ -170,9 +176,12 @@ class DBInfoMixin(object):
         self.import_all_classes()
         data = []
         for klass in self.classes:
-            data.extend(self.run_once(klass))
-            df = pd.DataFrame(data)
-            df.columns = ['class', 'n_instances', 'n_attrs', 'estimator', 'importance_gap']
+            try:
+                data.extend(self.run_once(klass))
+                df = pd.DataFrame(data)
+                df.columns = ['class', 'n_instances', 'n_attrs', 'estimator', 'importance_gap']
+            except:
+                pass
         return df
 
 

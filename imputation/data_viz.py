@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-ERRORS = [u'naive', u'neigh', u'removed']
+ERRORS = [u'naive', u'neigh', u'no_rows', 'no_cols']
 
 
 class Plotter(object):
@@ -100,7 +100,7 @@ class Plotter(object):
         }
         if error is None:
             key = 'error'
-            iterator = ['neigh', 'naive', 'removed']
+            iterator = ['neigh', 'naive', 'no_rows', 'no_cols']
         elif top_group is None:
             key = 'top_group'
             iterator = ['biased', 'random']
@@ -109,7 +109,7 @@ class Plotter(object):
             dbs, estimators, percents = self.df.index.levels
             iterator = estimators
         kwargs.update(my_kwargs)
-        fig, axes = plt.subplots(1, len(iterator))
+        fig, axes = plt.subplots(1, len(iterator), sharey=True)
         for ax, iteratee in zip(axes, iterator):
             kwargs[key] = iteratee
             self.plot_error_evolution(
@@ -236,7 +236,7 @@ class Plotter(object):
         }
         if error is None:
             key = 'error'
-            iterator = ['neigh', 'naive', 'removed']
+            iterator = ['neigh', 'naive', 'no_attrs', 'no_cols']
         elif missing_type is None:
             key = 'missing_type'
             iterator = ['biased', 'random']
