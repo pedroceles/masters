@@ -126,7 +126,7 @@ class PercentColMixing(object):
     def run_once(self, klass, times=100):
         import os
         import pickle
-        percents = [0.05, 0.1, 0.20, 0.25, 0.30, 0.4, 0.5, 0.6]
+        percents = [0.05, 0.1, 0.20, 0.25, 0.30, 0.4, 0.5]
         data = {}
         estimator = self.estimators[0]
         for percent in percents:

@@ -6,16 +6,17 @@ import numpy as np
 
 class BaseDFTransformer(object):
 
-    def __init__(self, f_path, db_name):
+    def __init__(self, f_path=None, db_name=None, data=None):
         self.f_path = f_path
         self.db_name = db_name
+        self.data = data
 
     def open_file(self):
         return open(self.f_path)
 
     def get_pickle(self):
         import pickle
-        return pickle.load(self.open_file())
+        return self.data or pickle.load(self.open_file())
 
 
 class PercentDFTransformer(BaseDFTransformer):
@@ -79,21 +80,44 @@ class DFAggregator(object):
 
     """Docstring for DFAggregator. """
 
-    def __init__(self, df_transformer_klass, files, names=None, **kwargs):
+    def __init__(self, df_transformer_klass, files=None, data=None, names=None, **kwargs):
         self.df_transformer_klass = df_transformer_klass
         self.files = files
         self.names = names
         self.df_transformer_klass_kwargs = kwargs
+        self.data = data
         if not self.names:
-            self.names = [n.split('/')[-3] for n in self.files]
+            if data:
+                self.name = data.keys()
+            else:
+                self.names = [n.split('/')[-3] for n in self.files]
 
     def get_df(self):
         dfs = []
-        for f_path, name in zip(self.files, self.names):
-            transformer = self.df_transformer_klass(
-                f_path, name, **self.df_transformer_klass_kwargs)
-            dfs.append(transformer.get_df())
+        if self.files:
+            for f_path, name in zip(self.files, self.names):
+                transformer = self.df_transformer_klass(
+                    f_path, name, **self.df_transformer_klass_kwargs)
+                dfs.append(transformer.get_df())
+        elif self.data:
+            for name, value in self.data.items():
+                transformer = self.df_transformer_klass(
+                    None, name, data=value, **self.df_transformer_klass_kwargs)
+                dfs.append(transformer.get_df())
         df = pd.concat(dfs, axis=0)
         df.sort_index(axis=1, inplace=True)
         df.sort_index(axis=0, inplace=True)
         return df
+
+
+class PickleAggregator(object):
+    def __init__(self, pattern):
+        from glob import glob
+        import pickle
+        fs = glob(pattern)
+        aggregate = {}
+        for f in fs:
+            data = pickle.load(open(f))
+            db = f.split('/')[-3]
+            aggregate[db] = data
+        self.aggregate = aggregate
